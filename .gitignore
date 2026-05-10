@@ -1,0 +1,50 @@
+# Database files (never commit)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+backups/
+data/
+# Logs
+logs/
+*.log
+*.jsonl
+# Embeddings cache
+embeddings/
+# Secrets (never commit)
+.env
+*.key
+*.pem
+secrets/
+vault/
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+# Models (large files)
+*.onnx
+*.bin
+*.safetensors
+*.gguf
+models/
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+# OS
+.DS_Store
+Thumbs.db
