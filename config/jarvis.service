@@ -1,0 +1,56 @@
+# /etc/systemd/system/jarvis.service
+# v6 fix: Type=notify, TimeoutStartSec=300, LoadCredential
+
+[Unit]
+Description=JARVIS Autonomous Agent v6.0
+Documentation=https://github.com/your/jarvis
+After=network-online.target docker.service
+Wants=network-online.target
+# v5 fix: network-online (not just network.target) + docker.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=jarvis
+Group=jarvis
+WorkingDirectory=/home/jarvis
+
+# v6 fix: 300s timeout (spaCy + Alembic + models > 90s default)
+TimeoutStartSec=300
+TimeoutStopSec=60
+
+# v6 fix: LoadCredential (not Environment= which shows in systemctl show)
+LoadCredential=anthropic_key:/etc/jarvis/secrets/anthropic_key
+LoadCredential=telegram_token:/etc/jarvis/secrets/telegram_token
+LoadCredential=deepgram_key:/etc/jarvis/secrets/deepgram_key
+LoadCredential=elevenlabs_key:/etc/jarvis/secrets/elevenlabs_key
+LoadCredential=elevenlabs_key:/etc/jarvis/secrets/elevenlabs_key
+
+# v6 fix: EnvironmentFile (not Environment= — values hidden from systemctl show)
+EnvironmentFile=/home/jarvis/.env
+
+ExecStart=/home/jarvis/venv/bin/python -m jarvis.daemon.kairos
+ExecReload=/bin/kill -HUP $MAINPID
+
+# v5 fix: StartLimitBurst (prevent boot loop + API cost explosion)
+Restart=always
+RestartSec=10
+RestartMaxDelaySec=300
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/jarvis/jarvis
+PrivateTmp=true
+PrivateDevices=true
+
+# Logs
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=jarvis
+
+[Install]
+WantedBy=multi-user.target
