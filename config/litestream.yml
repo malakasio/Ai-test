@@ -1,0 +1,14 @@
+# Litestream: continuous SQLite replication
+# v6 fix: PASSIVE checkpoint only (never TRUNCATE with Litestream running)
+dbs:
+  - path: /data/jarvis.db
+    replicas:
+      # Cloudflare R2 (first 10GB free)
+      - type: s3
+        bucket: ${LITESTREAM_BUCKET:-jarvis-backup}
+        path: jarvis.db
+        endpoint: ${R2_ENDPOINT:-https://account.r2.cloudflarestorage.com}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        sync-interval: 10s
+        snapshot-interval: 6h
