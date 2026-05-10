@@ -1,0 +1,37 @@
+# v6 fix: correct Caddyfile syntax
+# bcrypt hash: caddy hash-password --plaintext 'yourpassword'
+{$JARVIS_DOMAIN:localhost} {
+    # Webhooks: NO auth (Google Pub/Sub needs to POST here)
+    handle /webhooks/* {
+        reverse_proxy localhost:8080
+    }
+    # WebSocket voice stream — no auth, timeout fix
+    handle /ws/* {
+        reverse_proxy localhost:8080 {
+            transport http {
+                keepalive 120s
+                keepalive_idle_conns 10
+            }
+        }
+        header Connection "Upgrade"
+        header Upgrade "websocket"
+    }
+    # Static PWA files
+    handle /static/* {
+        root * /home/jarvis/src/jarvis/api
+        file_server
+    }
+    # API + Dashboard: basic auth
+    handle {
+        basicauth {
+            # Generate with: caddy hash-password --plaintext 'yourpassword'
+            {$CADDY_ADMIN_USER:admin} {$CADDY_ADMIN_HASH:JDJhJDE0JHpla2FHNUZMNzhCRFFFNjg4M0tEZXVzQ2N2S1pUUkJuL0hZUDNFSGxOLzRLSjhJcmJjT0o2}
+        }
+        reverse_proxy localhost:8080
+    }
+    # Logs
+    log {
+        output file /var/log/caddy/jarvis.log
+        format json
+    }
+}
