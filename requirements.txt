@@ -1,0 +1,50 @@
+# ─── Core (required) ──────────────────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+aiohttp==3.11.10
+aiosqlite==0.20.0
+pydantic==2.10.3
+tenacity==9.0.0
+python-multipart==0.0.19
+starlette==0.41.3
+watchdog==6.0.0
+# ─── Free LLM (Ollama local) ──────────────────────────────────────────────────
+httpx==0.28.1
+# ─── Free STT (faster-whisper local) ─────────────────────────────────────────
+faster-whisper==1.1.0
+numpy==2.2.0
+# ─── Free TTS (edge-tts online, no key) ──────────────────────────────────────
+edge-tts==7.0.2
+# ─── Kokoro TTS (free local, high quality) — optional ────────────────────────
+# kokoro-onnx==0.3.4
+# soundfile==0.12.1
+# ─── VAD (voice activity detection) ──────────────────────────────────────────
+webrtcvad==2.0.10
+# ─── Audio processing ─────────────────────────────────────────────────────────
+av==14.1.0
+# ─── Free embeddings (sentence-transformers local) ───────────────────────────
+sentence-transformers==3.3.1
+# ─── NLP (sentence splitting, Greek support) ─────────────────────────────────
+spacy==3.8.3
+# ─── Free web search (DuckDuckGo) ────────────────────────────────────────────
+duckduckgo-search==7.2.1
+# ─── Telegram bot ─────────────────────────────────────────────────────────────
+python-telegram-bot==21.9
+# ─── Memory / JSON ────────────────────────────────────────────────────────────
+json-repair==0.30.3
+# ─── Security / PII (optional, improves PII detection) ────────────────────────
+# presidio-analyzer==2.2.354
+# presidio-anonymizer==2.2.354
+# ─── File locking (parallel agents) ──────────────────────────────────────────
+filelock==3.16.1
+# ─── OPTIONAL PAID APIs ───────────────────────────────────────────────────────
+# anthropic==0.40.0        # Claude API (set ANTHROPIC_API_KEY)
+# deepgram-sdk==3.9.0      # Deepgram STT (set DEEPGRAM_API_KEY)
+# elevenlabs==1.11.0       # ElevenLabs TTS (set ELEVENLABS_API_KEY)
+# openai==1.59.3           # OpenAI fallback (set OPENAI_API_KEY)
+# litellm==1.56.1          # Multi-provider LLM routing
+# ─── Testing ──────────────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.25.0
+# ─── Dev tools ────────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
