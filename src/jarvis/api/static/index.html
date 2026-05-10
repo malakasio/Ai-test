@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0a0a1a">
+<link rel="manifest" href="/static/manifest.json">
+<title>JARVIS</title>
+<style>
+  :root {
+    --bg: #0a0a1a; --surface: #111128; --border: #1e1e3f;
+    --accent: #4f8ef7; --accent2: #7c3aed; --text: #e2e8f0;
+    --text-dim: #64748b; --green: #10b981; --red: #ef4444; --yellow: #f59e0b;
+    --font: 'SF Mono', 'Fira Code', monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); height:100vh; display:flex; flex-direction:column; }
+  #header { padding:12px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; }
+  #header .logo { font-size:18px; font-weight:700; background:linear-gradient(135deg,var(--accent),var(--accent2)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  #status-dot { width:8px; height:8px; border-radius:50%; background:var(--red); animation:pulse 2s infinite; }
+  #status-dot.connected { background:var(--green); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+  #metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; padding:12px 20px; border-bottom:1px solid var(--border); }
+  .metric { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; }
+  .metric-label { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+  .metric-value { font-size:20px; font-weight:700; margin-top:4px; }
+  #main { display:flex; flex:1; overflow:hidden; }
+  #chat { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  #messages { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .msg { max-width:80%; padding:10px 14px; border-radius:12px; font-size:13px; line-height:1.6; }
+  .msg.user { background:var(--accent2); align-self:flex-end; }
+  .msg.assistant { background:var(--surface); border:1px solid var(--border); align-self:flex-start; }
+  .msg.system { background:transparent; border:1px dashed var(--border); color:var(--text-dim); align-self:center; font-size:11px; }
+  #input-area { padding:12px 16px; border-top:1px solid var(--border); display:flex; gap:8px; align-items:center; }
+  #text-input { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:10px 14px; color:var(--text); font-family:var(--font); font-size:13px; resize:none; height:42px; }
+  #text-input:focus { outline:none; border-color:var(--accent); }
+  .btn { padding:10px 16px; border-radius:8px; border:none; cursor:pointer; font-family:var(--font); font-size:12px; font-weight:600; transition:all .2s; }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-primary:hover { background:#3b7de6; }
+  .btn-voice { background:var(--accent2); color:#fff; width:42px; height:42px; border-radius:50%; font-size:16px; padding:0; }
+  .btn-voice.recording { background:var(--red); animation:pulse 1s infinite; }
+  #log-panel { width:300px; border-left:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
+  #log-panel h3 { padding:10px 14px; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--text-dim); border-bottom:1px solid var(--border); }
+  #log-entries { flex:1; overflow-y:auto; padding:8px; font-size:10px; color:var(--text-dim); font-family:var(--font); }
+  .log-entry { padding:3px 6px; border-radius:3px; margin-bottom:2px; }
+  .log-entry.error { color:var(--red); }
+  .log-entry.warn { color:var(--yellow); }
+  .log-entry.info { color:var(--text-dim); }
+  #voice-indicator { display:none; position:fixed; bottom:80px; left:50%; transform:translateX(-50%); background:var(--accent2); color:#fff; padding:8px 20px; border-radius:20px; font-size:12px; }
+  #voice-indicator.visible { display:block; }
+  pre { white-space:pre-wrap; font-family:var(--font); }
+  code { background:#1e1e3f; padding:2px 6px; border-radius:4px; }
+  @media (max-width:600px) { #log-panel { display:none; } #metrics { grid-template-columns:repeat(2,1fr); } }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div id="status-dot"></div>
+  <div class="logo">JARVIS v6.0</div>
+  <span style="font-size:11px;color:var(--text-dim)" id="provider-info">Loading...</span>
+</div>
+
+<div id="metrics">
+  <div class="metric"><div class="metric-label">Uptime</div><div class="metric-value" id="m-uptime">--</div></div>
+  <div class="metric"><div class="metric-label">Tasks</div><div class="metric-value" id="m-tasks">--</div></div>
+  <div class="metric"><div class="metric-label">Voice p50</div><div class="metric-value" id="m-voice">--</div></div>
+  <div class="metric"><div class="metric-label">Cost today</div><div class="metric-value" id="m-cost">--</div></div>
+  <div class="metric"><div class="metric-label">Memory</div><div class="metric-value" id="m-memory">--</div></div>
+  <div class="metric"><div class="metric-label">Errors/h</div><div class="metric-value" id="m-errors">--</div></div>
+</div>
+
+<div id="main">
+  <div id="chat">
+    <div id="messages">
+      <div class="msg system">JARVIS ready. Type a message or press 🎤 to speak.</div>
+    </div>
+    <div id="input-area">
+      <button class="btn btn-voice" id="voice-btn" title="Hold to speak">🎤</button>
+      <textarea id="text-input" placeholder="Type a message..." rows="1"></textarea>
+      <button class="btn btn-primary" id="send-btn">Send</button>
+    </div>
+  </div>
+  <div id="log-panel">
+    <h3>Live Logs</h3>
+    <div id="log-entries"></div>
+  </div>
+</div>
+
+<div id="voice-indicator">🎙 Listening...</div>
+
+<script>
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ── API ──────────────────────────────────────────────────────────────────────
+async function api(path, opts={}) {
+  const res = await fetch(path, {headers:{'Content-Type':'application/json'}, ...opts});
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+// ── Messages ─────────────────────────────────────────────────────────────────
+function addMessage(role, text) {
+  const el = document.createElement('div');
+  el.className = `msg ${role}`;
+  // Simple markdown: **bold**, `code`, ```block```
+  el.innerHTML = text
+    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+  document.getElementById('messages').appendChild(el);
+  el.scrollIntoView({behavior:'smooth'});
+  return el;
+}
+
+// ── Chat ─────────────────────────────────────────────────────────────────────
+async function sendMessage(text) {
+  if (!text.trim()) return;
+  addMessage('user', text);
+  const loadingEl = addMessage('system', '⏳ Thinking...');
+  try {
+    const data = await api('/chat', {method:'POST', body: JSON.stringify({message: text})});
+    loadingEl.remove();
+    addMessage('assistant', data.response || '[No response]');
+  } catch(e) {
+    loadingEl.remove();
+    addMessage('system', `Error: ${e.message}`);
+  }
+}
+
+document.getElementById('send-btn').onclick = () => {
+  const inp = document.getElementById('text-input');
+  sendMessage(inp.value);
+  inp.value = '';
+};
+
+document.getElementById('text-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); document.getElementById('send-btn').click(); }
+});
+
+// ── Voice ─────────────────────────────────────────────────────────────────────
+let audioCtx = null;
+let mediaStream = null;
+let wsVoice = null;
+let recording = false;
+
+document.addEventListener('click', async () => {
+  if (!audioCtx) {
+    // v6 fix: global AudioContext (not local ctx)
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    window.unlockedAudioCtx = audioCtx;
+  }
+  if (audioCtx.state === 'suspended') await audioCtx.resume();
+}, {once: true});
+
+const voiceBtn = document.getElementById('voice-btn');
+const voiceIndicator = document.getElementById('voice-indicator');
+
+voiceBtn.addEventListener('mousedown', startRecording);
+voiceBtn.addEventListener('touchstart', e => { e.preventDefault(); startRecording(); });
+voiceBtn.addEventListener('mouseup', stopRecording);
+voiceBtn.addEventListener('touchend', e => { e.preventDefault(); stopRecording(); });
+
+let mediaRecorder = null;
+let audioChunks = [];
+
+async function startRecording() {
+  if (recording) return;
+  recording = true;
+  voiceBtn.classList.add('recording');
+  voiceIndicator.classList.add('visible');
+
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({audio: {sampleRate: 16000, channelCount: 1}});
+    mediaRecorder = new MediaRecorder(mediaStream);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.start();
+  } catch(e) {
+    addMessage('system', `Microphone error: ${e.message}`);
+    recording = false;
+    voiceBtn.classList.remove('recording');
+    voiceIndicator.classList.remove('visible');
+  }
+}
+
+async function stopRecording() {
+  if (!recording || !mediaRecorder) return;
+  recording = false;
+  voiceBtn.classList.remove('recording');
+  voiceIndicator.classList.remove('visible');
+
+  mediaRecorder.stop();
+  await sleep(100);
+
+  const blob = new Blob(audioChunks, {type: 'audio/webm'});
+  const arrayBuffer = await blob.arrayBuffer();
+
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+  }
+
+  // Send via WebSocket
+  const wsUrl = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws/voice';
+  const ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    ws.send(arrayBuffer);
+  };
+
+  const responseChunks = [];
+  ws.onmessage = async e => {
+    if (e.data instanceof Blob) {
+      responseChunks.push(e.data);
+    } else {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'audio_done') {
+        const audioBlob = new Blob(responseChunks, {type: 'audio/mpeg'});
+        const url = URL.createObjectURL(audioBlob);
+        const audio = new Audio(url);
+        audio.play().catch(console.error);
+        ws.close();
+      }
+    }
+  };
+
+  ws.onerror = e => addMessage('system', 'Voice WebSocket error');
+}
+
+// ── Metrics polling ───────────────────────────────────────────────────────────
+async function updateMetrics() {
+  try {
+    const d = await api('/dashboard');
+    const uptime = d.uptime_seconds;
+    const h = Math.floor(uptime/3600), m = Math.floor((uptime%3600)/60);
+    document.getElementById('m-uptime').textContent = `${h}h${m}m`;
+    document.getElementById('m-tasks').textContent = d.tasks.total;
+    document.getElementById('m-voice').textContent = `${d.voice.p50_e2e_ms}ms`;
+    document.getElementById('m-cost').textContent = `$${d.llm.cost_usd.toFixed(4)}`;
+    document.getElementById('m-memory').textContent = d.memory.records;
+    document.getElementById('m-errors').textContent = `${d.tasks.error_rate_1h_pct.toFixed(1)}%`;
+    document.getElementById('provider-info').textContent = 'Connected';
+    document.getElementById('status-dot').classList.add('connected');
+  } catch(e) {
+    document.getElementById('status-dot').classList.remove('connected');
+  }
+}
+
+setInterval(updateMetrics, 10000);
+updateMetrics();
+
+// ── PWA Service Worker ────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').catch(console.error);
+}
+</script>
+</body>
+</html>
