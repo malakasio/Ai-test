@@ -1,0 +1,143 @@
+version: '3.9'
+
+# JARVIS v6.0 — Docker Compose
+#
+# v6 architecture:
+# - Main agent daemon: systemd service (NOT Docker) for systemd LoadCredential + file access
+# - Sandbox: Docker container for untrusted command execution
+# - This compose file: sandbox + optional support services
+#
+# Usage:
+#   docker-compose up -d jarvis-sandbox   # Required: command sandbox
+#   docker-compose up -d caddy            # Optional: HTTPS reverse proxy
+#   docker-compose up -d ollama           # Optional: local LLM (free)
+
+services:
+
+  # ─── Command sandbox (v6: all terminal cmds run through docker exec) ─────────
+  jarvis-sandbox:
+    image: ubuntu:22.04
+    container_name: jarvis-sandbox
+    command: ["sleep", "infinity"]
+    working_dir: /workspace
+    volumes:
+      - ${JARVIS_HOME:-/home/jarvis}/workspace:/workspace:rw
+    environment:
+      - TERM=dumb
+      - NO_COLOR=1
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    networks:
+      - jarvis_internal
+    restart: unless-stopped
+
+  # ─── Lab sandbox (separate, more permissive for network tools) ───────────────
+  jarvis-lab:
+    image: kalilinux/kali-rolling:latest
+    container_name: jarvis-lab
+    command: ["sleep", "infinity"]
+    working_dir: /workspace
+    volumes:
+      - ${JARVIS_HOME:-/home/jarvis}/lab:/workspace:rw
+    environment:
+      - TERM=dumb
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW   # Required for nmap/tcpdump
+    networks:
+      - jarvis_lab
+    restart: unless-stopped
+    profiles:
+      - lab    # Only started with: docker-compose --profile lab up
+
+  # ─── Ollama (free local LLM) ─────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    networks:
+      - jarvis_internal
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+    # Uncomment for GPU support:
+    # runtime: nvidia
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+
+  # ─── Computer Use / Xvfb display server ─────────────────────────────────────
+  xvfb:
+    image: ubuntu:22.04
+    container_name: jarvis-xvfb
+    command: >
+      bash -c "apt-get update -qq &&
+               apt-get install -y -qq xvfb x11vnc &&
+               Xvfb :99 -screen 0 1280x720x24 &
+               x11vnc -display :99 -localhost -nopw -forever"
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      - DISPLAY=:99
+    networks:
+      - jarvis_internal
+    restart: unless-stopped
+    profiles:
+      - computer-use
+
+  # ─── Caddy reverse proxy (HTTPS, auto Let's Encrypt) ─────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: jarvis-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./config/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - jarvis_internal
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # ─── Litestream DB replication to cloud (optional) ───────────────────────────
+  litestream:
+    image: litestream/litestream:latest
+    container_name: jarvis-litestream
+    command: ["replicate"]
+    volumes:
+      - ${JARVIS_HOME:-/home/jarvis}/data:/data:ro
+      - ./config/litestream.yml:/etc/litestream.yml:ro
+    environment:
+      - LITESTREAM_ACCESS_KEY_ID=${LITESTREAM_ACCESS_KEY_ID:-}
+      - LITESTREAM_SECRET_ACCESS_KEY=${LITESTREAM_SECRET_ACCESS_KEY:-}
+    restart: unless-stopped
+    profiles:
+      - backup
+
+volumes:
+  ollama_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  jarvis_internal:
+    driver: bridge
+  jarvis_lab:
+    driver: bridge
+    internal: true   # Lab network: no external internet by default
