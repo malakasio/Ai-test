@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""
+JARVIS CLI — control tool.
+v5 fix: honest about what's rollback-able.
+v6 fix: communicate with daemon via HTTP API (not direct DB access).
+Usage:
+  jarvis status
+  jarvis logs [n]
+  jarvis rollback last
+  jarvis rollback <id>
+  jarvis rollback-file <file> <commit>
+  jarvis stop
+  jarvis start
+  jarvis cost
+  jarvis memory <query>
+  jarvis task <text>
+  jarvis skill_proposals
+"""
+import json
+import subprocess
+import sys
+import time
+import os
+from pathlib import Path
+JARVIS_API = os.environ.get("JARVIS_API", "http://localhost:8080")
+LOG_FILE = Path(os.environ.get("JARVIS_HOME", Path.home() / "jarvis")) / "logs" / "jarvis.log"
+def cmd_status():
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{JARVIS_API}/health", timeout=5) as r:
+            data = json.loads(r.read())
+        d = data.get("metrics", data)
+        print(f"Status: OK")
+        print(f"Uptime: {d.get('uptime_seconds', 0) // 3600}h {(d.get('uptime_seconds', 0) % 3600) // 60}m")
+        print(f"Tasks: {d.get('tasks', {}).get('total', 0)}")
+        print(f"Cost today: ${d.get('llm', {}).get('cost_usd', 0):.4f}")
+    except Exception as e:
+        print(f"Cannot reach daemon: {e}")
+        print("Checking systemd service...")
+        subprocess.run(["systemctl", "status", "jarvis", "--no-pager", "-l"])
+def cmd_logs(n=20):
+    if LOG_FILE.exists():
+        subprocess.run(["tail", f"-{n}", str(LOG_FILE)])
+    else:
+        print("No log file found")
+def cmd_rollback_last():
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{JARVIS_API}/rollback/list", timeout=5) as r:
+            points = json.loads(r.read())
+        if not points:
+            print("No rollback points found")
+            return
+        latest = points[0]
+        print(f"Rolling back to: {latest['id']} ({latest['description']})")
+        confirm = input("Confirm? [y/N] ")
+        if confirm.lower() == 'y':
+            req = urllib.request.Request(f"{JARVIS_API}/rollback/{latest['id']}", method="POST")
+            with urllib.request.urlopen(req, timeout=10) as r:
+                print(json.loads(r.read()))
+    except Exception as e:
+        print(f"Rollback failed: {e}")
+def cmd_rollback_file(filepath, commit):
+    """v5 fix: only git rollback for files (honest about limitations)."""
+    subprocess.run(["git", "checkout", commit, "--", filepath])
+    print(f"Restored {filepath} to {commit}")
+def cmd_rollback_db(timestamp):
+    """v5 fix: must stop daemon first."""
+    print("IMPORTANT: DB rollback requires stopping the daemon.")
+    confirm = input("Stop daemon and restore DB? [y/N] ")
+    if confirm.lower() == 'y':
+        subprocess.run(["systemctl", "stop", "jarvis"])
+        subprocess.run(["litestream", "restore", "-timestamp", timestamp, str(LOG_FILE.parent.parent / "data" / "jarvis.db")])
+        subprocess.run(["systemctl", "start", "jarvis"])
+def cmd_stop():
+    subprocess.run(["systemctl", "stop", "jarvis"])
+    print("Daemon stopped")
+def cmd_start():
+    subprocess.run(["systemctl", "start", "jarvis"])
+    print("Daemon started")
+def cmd_cost():
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{JARVIS_API}/costs", timeout=5) as r:
+            data = json.loads(r.read())
+        print("API costs today:")
+        for row in data.get("today", []):
+            print(f"  {row['model']}: ${row['total']:.4f}")
+        print(f"\nEstimated monthly: ${data.get('monthly_estimate', 0):.2f}")
+        print("\nNote: Local models (Ollama) have $0.00 cost.")
+    except Exception as e:
+        print(f"Cannot reach daemon: {e}")
+def cmd_memory(query):
+    import urllib.request
+    try:
+        url = f"{JARVIS_API}/memory/search?q={urllib.request.quote(query)}"
+        with urllib.request.urlopen(url, timeout=10) as r:
+            data = json.loads(r.read())
+        for m in data.get("results", []):
+            print(f"[{m.get('time_human', '?')}] {m['content'][:200]}")
+    except Exception as e:
+        print(f"Memory search failed: {e}")
+def cmd_task(text):
+    import urllib.request
+    body = json.dumps({"task": text}).encode()
+    req = urllib.request.Request(f"{JARVIS_API}/tasks", data=body, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read())
+        print(f"Task queued: {data['task_id']}")
+    except Exception as e:
+        print(f"Task submission failed: {e}")
+def cmd_skill_proposals():
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"{JARVIS_API}/skill_proposals", timeout=5) as r:
+            proposals = json.loads(r.read())
+        if not proposals:
+            print("No pending skill proposals")
+            return
+        for p in proposals:
+            print(f"\n#{p['id']} — {p['skill_name']}:")
+            print(p['proposal'][:500])
+            print(f"Accept: jarvis accept_skill {p['id']}")
+    except Exception as e:
+        print(f"Failed: {e}")
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] == "help":
+        print(__doc__)
+        return
+    cmd = args[0]
+    rest = args[1:]
+    dispatch = {
+        "status": lambda: cmd_status(),
+        "logs": lambda: cmd_logs(int(rest[0]) if rest else 20),
+        "rollback": lambda: cmd_rollback_last() if not rest or rest[0] == "last" else cmd_rollback_file(rest[0], rest[1] if len(rest) > 1 else "HEAD~1"),
+        "rollback-file": lambda: cmd_rollback_file(rest[0], rest[1]) if len(rest) >= 2 else print("Usage: jarvis rollback-file <file> <commit>"),
+        "rollback-db": lambda: cmd_rollback_db(rest[0]) if rest else print("Usage: jarvis rollback-db <timestamp>"),
+        "stop": lambda: cmd_stop(),
+        "start": lambda: cmd_start(),
+        "cost": lambda: cmd_cost(),
+        "memory": lambda: cmd_memory(" ".join(rest)) if rest else print("Usage: jarvis memory <query>"),
+        "task": lambda: cmd_task(" ".join(rest)) if rest else print("Usage: jarvis task <text>"),
+        "skill_proposals": lambda: cmd_skill_proposals(),
+    }
+    handler = dispatch.get(cmd)
+    if handler:
+        handler()
+    else:
+        print(f"Unknown command: {cmd}")
+        print("Run 'jarvis help' for usage.")
+if __name__ == "__main__":
+    main()
